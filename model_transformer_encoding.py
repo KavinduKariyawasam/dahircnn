@@ -215,7 +215,7 @@ class ResNet_UNet(torch.nn.Module):
         self.conv_pred = nn.Conv2d(384, 32, kernel_size=3, padding=1)
 
     def forward_single(self, x):
-        x = x.unsqueeze(0)
+        # x = x.unsqueeze(0)
         # resnet layers
         # print(f"input shape: {x.shape}")
         x = self.resnet.conv1(x)
@@ -632,11 +632,12 @@ class Custom_Transformer_UNet(ResNet_UNet):
         # print("=>> Dual encoder transformer forward pass <<=")
         
         # forward backbone resnet
-        # x1 = x[:, :3, :, :]
-        # x2 = x[:, 3:, :, :]
-        x1 = x[0]
-        x2 = x[1]
-        x = x2
+        x1 = x[:, :3, :, :]
+        x2 = x[:, 3:, :, :]
+        # print(f"input shape: {x1.shape}, {x2.shape}")
+        # x1 = x[0]
+        # x2 = x[1]
+        # x = x2
         a_128, a_64, a_32, a_16 = self.forward_single(x1)
         b_128, b_64, b_32, b_16 = self.forward_single(x2)
         

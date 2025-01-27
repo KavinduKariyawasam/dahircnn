@@ -12,7 +12,7 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 
 def load_model(checkpoint_path=None):
-    device = ('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = ('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     backbone = Custom_Transformer_UNet(input_nc=3, output_nc=5, token_len=4, resnet_stages_num=4,
                                 with_pos='learned', with_decoder_pos='learned', enc_depth=1, dec_depth=8).to(device)
@@ -38,7 +38,7 @@ def load_model(checkpoint_path=None):
 
     return model
 
-def load_data():
+def load_data(batch_size=4, split='tier1'):
     if os.path.exists("/home/deependra/Dataset/malawi_test/test_df.csv"):
         print("Loading test_df from file")
         test_df = pd.read_csv("/home/deependra/Dataset/malawi_test/test_df.csv")
@@ -46,25 +46,41 @@ def load_data():
         print("Creating test_df")
         test_df = test_df_create()
 
-    if os.path.exists("/home/deependra/Dataset/malawi_test/train_df.csv"):
+    if os.path.exists(f"/home/deependra/Dataset/malawi_test/train_df_{split}.csv"):
         print("Loading train_df from file")
-        train_df = pd.read_csv("/home/deependra/Dataset/malawi_test/train_df.csv")
+        train_df = pd.read_csv(f"/home/deependra/Dataset/malawi_test/train_df_{split}.csv")
     else:
         print("Creating train_df")
         train_df = train_df_create()
+        
+    if os.path.exists("/home/deependra/Dataset/malawi_test/train_df_hold.csv"):
+        print("Loading hold_df from file")
+        val_df = pd.read_csv("/home/deependra/Dataset/malawi_test/train_df_hold.csv")
+    else:
+        print("Creating hold_df")
+        val_df = train_df_create()
 
     # Instantiate dataset
     train_dataset = BuildingDataset(train_df, resize_size=(1024, 1024))
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=2,
         collate_fn=collate_fn,
     )
     
-    print("Test data loading complete")
+    print("Train data loading complete")
+    
+    val_dataset = BuildingDataset(val_df, resize_size=(1024, 1024))
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=2,
+        collate_fn=collate_fn,
+    )
     
     test_dataset = TestDataset(test_df, resize_size=(1024, 1024))
     test_loader = DataLoader(
@@ -74,14 +90,14 @@ def load_data():
         num_workers=2,
         collate_fn=test_collate_fn,
     )
+        
+    print("Test data loading complete")
 
-    print("Train data loading complete")
-
-    return train_loader, test_loader
+    return train_loader, test_loader, val_loader
 
 def building_count_mae_loss(model, images, gt, score_threshold=0.5):
     model.eval()
-    # device = ('cuda:1' if torch.cuda.is_available() else 'cpu')
+    # device = ('cuda:0' if torch.cuda.is_available() else 'cpu')
     # model.to(device)
     
     # print(f"MAE loss calculation started")
@@ -114,8 +130,8 @@ def building_count_mae_loss(model, images, gt, score_threshold=0.5):
     return mae
     
 
-def train_model(model, train_loader, val_loader=None, epochs=10):
-    device = ('cuda:1' if torch.cuda.is_available() else 'cpu')
+def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True):
+    device = ('cuda:0' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.train()
     
@@ -125,6 +141,9 @@ def train_model(model, train_loader, val_loader=None, epochs=10):
     loss_list = []
     loss_avg_dict = {}
     failed_count = 0
+    error_image_ids = []
+    
+    best_val_loss = 10000000
     
     for epoch in range(epochs):
         # Initialize tqdm for epoch-wise progress tracking
@@ -135,7 +154,8 @@ def train_model(model, train_loader, val_loader=None, epochs=10):
             try:
                 with autocast():
                     # Prepare images and targets
-                    images = images[0]
+                    # images = images[0]
+                    # print(f"image shape: {images[0].shape}", images[1].shape)
                     images = list(image.to(device) for image in images)
                     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
@@ -143,8 +163,8 @@ def train_model(model, train_loader, val_loader=None, epochs=10):
                     loss_dict = model(images, targets)
                     # losses = sum(loss for loss in loss_dict.values())
                     
-                    mae_loss = building_count_mae_loss(model, images, counts)
-                    model.train()
+                    # mae_loss = building_count_mae_loss(model, images, counts)
+                    # model.train()
                     # print(f"MAE: {mae_loss}")
                     
                     # breakpoint()
@@ -153,7 +173,7 @@ def train_model(model, train_loader, val_loader=None, epochs=10):
                     loss_dict['loss_classifier'] *= weight_classifier
 
                     losses = sum(loss for loss in loss_dict.values())
-                    losses += mae_loss
+                    # losses += mae_loss
                     
                 # breakpoint()
 
@@ -171,75 +191,98 @@ def train_model(model, train_loader, val_loader=None, epochs=10):
                 epoch_progress.set_postfix({"Iteration Loss": losses.item(), "Epoch Loss": epoch_loss / (i + 1)})
 
             except Exception as e:
+                print(f"Image id: {targets[0]['image_id']}")
+                error_image_ids.append(targets[0]['image_id'])
                 # Log errors if any
                 failed_count += 1
-                # print(f"Error: {e}")
-                continue
+                print(f"Error: {e}")
+            #     continue
 
         # Log average loss for the epoch
         avg_epoch_loss = epoch_loss / len(train_loader)
         loss_list.append(avg_epoch_loss)
         print(f"Epoch {epoch + 1}/{epochs} completed. Average Loss: {avg_epoch_loss}")
 
-        if (epoch + 1) % 5 == 0:
-            # Save the model
-            model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints_mae/model_{epoch+1}.pth"
-            torch.save(model.state_dict(), model_path)
-            print(f"Model saved at: {model_path}")
+            
+        if val_loader is not None:
+            print("========= Validation started =========")
+            model.eval()
+            image_counts = []
+            
+            validate_progress = tqdm(enumerate(val_loader), total=len(val_loader), unit="batch")
+            
+            mae_total_loss = 0
+            
+            with torch.no_grad():
+                for i, (images, targets, target_counts) in validate_progress:
+                    imgs = list(image.to(device) for image in images)
+
+                    outputs = model(imgs)
+
+                    for i, output in enumerate(outputs):
+                        img_ids = targets[0]['image_id']
+                        img_id = img_ids[i]
+
+                        scores = output["scores"].cpu()
+                        keep = scores >= 0.5
+                        labels = output["labels"][keep].cpu().numpy()
+
+                        counts = {class_name: 0 for class_name in damage_class_to_id.keys()}
+                        for label in labels:
+                            class_name = id_to_damage_class.get(label, "unknown")
+                            if class_name in counts:
+                                counts[class_name] += 1
+
+                        image_counts = [{"img_id": img_id, "counts": counts}]
+                        
+                    total_categories = len(target_counts) 
+                    absolute_errors = [
+                        abs(target_counts[0][key] - image_counts[0]['counts'][key]) for key in target_counts[0]
+                    ]
+                    mae_loss = sum(absolute_errors) / total_categories
+                    mae_total_loss += mae_loss
+
+                    validate_progress.set_postfix({"Iteration Loss": mae_loss})
+                    # breakpoint()
+            mae_total_loss /= len(val_loader)
+            print(f"Validation MAE Loss: {mae_total_loss}")
+            
+            if mae_total_loss < best_val_loss:
+                best_val_loss = mae_total_loss
+                best_epoch = epoch
+                best_model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/best_model.pth"
+                torch.save(model.state_dict(), best_model_path)
+                print(f"New best model saved at: {best_model_path}")
+            
+            # breakpoint()
+            model.train()
+    
+    model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/last_model.pth"
+    torch.save(model.state_dict(), model_path)
+    print(f"Last model saved at: {model_path}")
             
     print("========= Training completed =============")
     if len(loss_list) > 0:
         print(f"Final training loss: {loss_list[-1]}")
     print(f"Failed iterations: {failed_count/epochs}")
+    print(f"Best model found at epoch: {best_epoch}")
     print("===========================================")
-            
-    plt.plot(loss_list)
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.title("Loss vs Epochs")
-
-    plt.savefig("/home/deependra/kuyesera/dahircnn/loss_plot_mae.png")
-    plt.close()
     
-    # for epoch in range(epochs):
-    #     iteration_loss = 0
-    #     for i, (images, targets) in enumerate(train_loader):
-    #         try:
-    #             with autocast():
-    #                 # print(f"Image size: {images[0][0].shape, images[0][1].shape}")
-    #                 images = images[0]
-    #                 images = list(image.to(device) for image in images)
-    #                 # print(f"len(images): {len(images)}")
-    #                 targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-    #                 loss_dict = model(images, targets)
-    #                 losses = sum(loss for loss in loss_dict.values())
-    #             # optimizer.zero_grad()
-    #             # losses.backward()
-    #             # optimizer.step()
-    #             scaler.scale(losses).backward()
-    #             scaler.step(optimizer)
-    #             scaler.update()
-    #             optimizer.zero_grad()
-    #             iteration_loss += losses
-    #             torch.cuda.empty_cache()
-    #             print(f"Iteration: {i}, Loss: {losses}")
-    #         except Exception as e:
-    #             print(f"Error: {e}")
-    #             continue
-        
-    #     print(f"Epoch: {epoch + 1}/{epochs}, Loss: {iteration_loss/len(train_loader)}")
-    #     torch.save(model.state_dict(), f"/home/deependra/kuyesera/dahircnn/model_{epoch}.pth")
-    #     print(f"Model saved at epoch: {epoch}")
-        
-        # TODO: Add validation part
-        # model.eval()
-        # for i, (images, targets) in enumerate(test_loader):
-        #     images = list(image.to(device) for image in images)
-        #     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        #     loss_dict = model(images, targets)
-        #     losses = sum(loss for loss in loss_dict.values())
-        #     print(f"Test Iteration: {i}, Loss: {losses}")
-        # model.train()
+    # with open("/home/deependra/kuyesera/dahircnn/error_image_ids_tier1.txt", "w") as f:
+    #     for item in error_image_ids:
+    #         f.write("%s\n" % item)
+    
+    if plot_loss:
+        plt.plot(loss_list)
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.title("Loss vs Epochs")
+
+        plt.savefig("/home/deependra/kuyesera/dahircnn/loss_plot_with_val.png")
+        plt.close()
+    
+    model = load_model(best_model_path)
+
     return model
 
 
@@ -282,9 +325,10 @@ def predict_and_count(model, data_loader, device, score_threshold=0.5):
         # Wrap the data_loader with tqdm for a progress bar
         for imgs, img_ids in tqdm(data_loader, desc="Processing images"):
             # Move images to the device
-            img = imgs[0][0].to(device)
-            img_pre = imgs[0][1].to(device)
-            imgs = [img, img_pre]
+            # img = imgs[0][0].to(device)
+            # img_pre = imgs[0][1].to(device)
+            # imgs = [img, img_pre]
+            imgs = list(image.to(device) for image in imgs)
 
             # Run the model
             outputs = model(imgs)
@@ -310,16 +354,16 @@ def predict_and_count(model, data_loader, device, score_threshold=0.5):
     return image_counts
 
 if __name__ == "__main__":
-    train_loader, test_loader = load_data()
+    train_loader, test_loader, val_loader = load_data(batch_size=2, split="tier1")
     
     dahircnn = load_model()
     # print("Model loaded: ", dahircnn)
     
-    # model = train_model(dahircnn, train_loader, epochs=20)
+    model = train_model(dahircnn, train_loader, val_loader=val_loader, epochs=10)
     
-    checkpoint_path = "/home/deependra/kuyesera/dahircnn/checkpoints_mae/model_5.pth"
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
-    model = load_model(checkpoint_path)
+    # checkpoint_path = "/home/deependra/kuyesera/dahircnn/checkpoints/tier1/model_20.pth"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    # model = load_model(checkpoint_path)
     model = model.to(device)
 
     # Run predictions
@@ -348,6 +392,6 @@ if __name__ == "__main__":
     sub_df = sub_df.sort_values("id").reset_index(drop=True)
 
     # Save the DataFrame to a CSV file
-    submission_path = "/home/deependra/kuyesera/dahircnn/submissions/initial_mae_5.csv"
+    submission_path = "/home/deependra/kuyesera/dahircnn/submissions/initial_best_model.csv"
     sub_df.to_csv(submission_path, index=False)
     print(f"Submission file saved at {submission_path}")

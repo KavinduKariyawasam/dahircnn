@@ -106,9 +106,17 @@ class GeneralizedRCNN(nn.Module):
         # breakpoint()
         # images = images[0]
         # print(f"type(targets): {type(targets)}")
-        if self.training:
-            targets = [targets[0], targets[0]]
+        # if self.training:
+        #     targets = [targets[0], targets[0]]
+        #     breakpoint()
+            
+        # print(f"Shape of images: {images[0].shape}")
+        # img_post = self.transform([images[0][:3]], targets)
+        # img_pre = self.transform([images[0][3:]], targets)
         images, targets = self.transform(images, targets)
+        
+        # print(type(images))
+        # print(type(targets))
 
         # Check for degenerate boxes
         # TODO: Move this to a function
@@ -125,14 +133,16 @@ class GeneralizedRCNN(nn.Module):
                                      .format(degen_bb, target_idx))
 
         features = self.backbone(images.tensors)
+        # print(f"Features: {features.keys()}")
         # print('features:', features.shape)
         if isinstance(features, torch.Tensor):
             features = OrderedDict([('0', features)])
         
         # take only the first image and targets
-        targets = [targets[0]] if targets is not None else None
+        # targets = [targets[0]] if targets is not None else None
         
-        images = ImageList(images.tensors[1].unsqueeze(0), [images.image_sizes[1]])
+        # print(f"image size: {images.tensors[0].shape}")
+        # images = ImageList(images.tensors.unsqueeze(0), [images.image_sizes])
         
         gc.collect()
         torch.cuda.empty_cache()
@@ -268,9 +278,9 @@ class FasterRCNN(GeneralizedRCNN):
             box_score_thresh, box_nms_thresh, box_detections_per_img)
 
         if image_mean is None:
-            image_mean = [0.485, 0.456, 0.406]
+            image_mean = [0.485, 0.456, 0.406, 0.485, 0.456, 0.406]
         if image_std is None:
-            image_std = [0.229, 0.224, 0.225]
+            image_std = [0.229, 0.224, 0.225, 0.229, 0.224, 0.225]
         transform = GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std)
 
         super(FasterRCNN, self).__init__(backbone, rpn, roi_heads, transform)
@@ -527,6 +537,8 @@ if __name__ == "__main__":
     model.transform.min_size = (1024,)
     model.eval().cuda()
     # print the model architecture
-    output = model([img1_tensor.to(device), img2_tensor.to(device)])
+    # output = model([img1_tensor.to(device), img2_tensor.to(device)])
+    print(f"image shapes: {imgs.shape}")
+    output = model([imgs.to(device), imgs.to(device)])
 
-    print(output)
+    # print(output)

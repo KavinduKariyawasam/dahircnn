@@ -118,10 +118,10 @@ def test_df_create():
     return test_df
 
 
-def train_df_create():
+def train_df_create(split="hold"):
     dfs = []
-    image_dir = Path(f"{DATA_DIR}/x2view/geotiffs/hold/images")
-    label_dir = Path(f"{DATA_DIR}/x2view/geotiffs/hold/labels")
+    image_dir = Path(f"{DATA_DIR}/x2view/geotiffs/{split}/images")
+    label_dir = Path(f"{DATA_DIR}/x2view/geotiffs/{split}/labels")
     
     image_paths = list(image_dir.rglob("*.tif"))
     images_df = pd.DataFrame(image_paths, columns=["image_path"])
@@ -182,7 +182,7 @@ def train_df_create():
 
     # Drop un-classified, as the main target categories include no-damage, minor-damage, major-damage, destroyed
     df = df.drop("un-classified", axis=1)
-    df.to_csv("/home/deependra/Dataset/malawi_test/train_df.csv", index=False)
+    df.to_csv(f"/home/deependra/Dataset/malawi_test/train_df_{split}.csv", index=False)
     return df
 
 def get_subtype_counts(label_path):
@@ -228,12 +228,16 @@ class BuildingDataset(Dataset):
     def __init__(self, df, resize_size=(512, 512)):
         self.df = df.reset_index(drop=True)
         self.resize_size = resize_size
+        self.augment = False
         self.damage_class_to_id = {
             "no-damage": 1,
             "minor-damage": 2,
             "major-damage": 3,
             "destroyed": 4,
         }
+        # self.augmentations = TF.Compose([
+        #     TF.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        # ])
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
@@ -248,25 +252,34 @@ class BuildingDataset(Dataset):
                 "destroyed": row["destroyed"],
             }
         
-        with rasterio.open(img_pre_path) as src:
-            img_array = src.read()
-            if img_array.shape[0] >= 3:
-                img_array = img_array[:3, :, :]
-            else:
-                img_array = np.repeat(img_array, 3, axis=0)
+        try:
+            with rasterio.open(img_pre_path) as src:
+                img_array = src.read()
+                if img_array.shape[0] >= 3:
+                    img_array = img_array[:3, :, :]
+                else:
+                    img_array = np.repeat(img_array, 3, axis=0)
 
-            img_array = np.transpose(img_array, (1, 2, 0)).astype(np.uint8)
-            img_pre = Image.fromarray(img_array)
-        
-        with rasterio.open(img_path) as src:
-            img_array = src.read()
-            if img_array.shape[0] >= 3:
-                img_array = img_array[:3, :, :]
-            else:
-                img_array = np.repeat(img_array, 3, axis=0)
+                img_array = np.transpose(img_array, (1, 2, 0)).astype(np.uint8)
+                img_pre = Image.fromarray(img_array)
+            
+            with rasterio.open(img_path) as src:
+                img_array = src.read()
+                if img_array.shape[0] >= 3:
+                    img_array = img_array[:3, :, :]
+                else:
+                    img_array = np.repeat(img_array, 3, axis=0)
 
-            img_array = np.transpose(img_array, (1, 2, 0)).astype(np.uint8)
-            img = Image.fromarray(img_array)
+                img_array = np.transpose(img_array, (1, 2, 0)).astype(np.uint8)
+                img = Image.fromarray(img_array)
+        except Exception as e:
+            print(f"Error reading image: {img_path}")
+            print(e)
+            return {
+                "img": None,
+                "target": {'image_id': image_id},
+                "counts": None
+            }
 
         width, height = img.size
 
@@ -326,9 +339,15 @@ class BuildingDataset(Dataset):
         # Use TF.to_tensor instead of F.to_tensor
         img_pre = TF.to_tensor(img_pre)
         img = TF.to_tensor(img)
+        
+        if self.augment:
+            img = self.augmentations(img)
+            img_pre = self.augmentations(img_pre)
+        
+        imgs = torch.cat([img, img_pre], dim=0)
 
         return {
-            "img": (img, img_pre),
+            "img": imgs,
             "target": target,
             "counts": damge_counts
         }
@@ -443,8 +462,10 @@ class TestDataset(Dataset):
         img_pre = TF.resize(img_pre, self.resize_size)
         img_pre = TF.to_tensor(img_pre)
 
+        imgs = torch.cat([img, img_pre], dim=0)
+        
         return {
-            "img": (img, img_pre),
+            "img": imgs,
             "img_id": img_id
         }
 
@@ -498,19 +519,19 @@ if __name__ == "__main__":
 
     print("Test data loading complete")
 
-    if os.path.exists("/home/deependra/Dataset/malawi_test/train_df.csv"):
+    if os.path.exists("/home/deependra/Dataset/malawi_test/train_df_tier1.csv"):
         print("Loading train_df from file")
-        train_df = pd.read_csv("/home/deependra/Dataset/malawi_test/train_df.csv")
+        train_df = pd.read_csv("/home/deependra/Dataset/malawi_test/train_df_tier1.csv")
     else:
         print("Creating train_df")
-        train_df = train_df_create()
+        train_df = train_df_create(split="tier1")
 
     # Instantiate dataset
     train_dataset = BuildingDataset(train_df, resize_size=(1024, 1024))
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=1,
+        batch_size=2,
         shuffle=True,
         num_workers=8,
         collate_fn=collate_fn,
