@@ -130,6 +130,42 @@ def building_count_mae_loss(model, images, gt, score_threshold=0.5):
     return mae
     
 
+def building_count_mae_loss_differentiable(model, images, gt, score_threshold=0.5):
+    model.eval()
+    mae_total = torch.tensor(0.0, device=images.device, requires_grad=True)  
+    batch_size = len(images)
+
+    outputs = model(images)
+
+    for i, output in enumerate(outputs):
+        scores = output["scores"]  
+        keep = scores >= score_threshold  
+        predicted_labels = output["labels"][keep] 
+        unique_labels, counts = torch.unique(predicted_labels, return_counts=True)
+
+        predicted_counts = torch.zeros(len(damage_class_to_id), device=images.device)
+
+        for j, label in enumerate(unique_labels):
+            class_idx = label.item()  
+            if class_idx < len(predicted_counts):  
+                predicted_counts[class_idx] = counts[j] 
+
+        gt_counts = torch.zeros(len(damage_class_to_id), device=images.device)
+        for class_name, count in gt[i].items():
+            class_idx = damage_class_to_id[class_name]
+            gt_counts[class_idx] = count
+
+        mae = torch.abs(predicted_counts - gt_counts).sum()
+
+        total_count = gt_counts.sum()
+        total_count = torch.where(total_count > 0, total_count, torch.tensor(1.0, device=images.device))  
+        mae /= total_count
+
+        mae_total = mae_total + mae  
+
+    return mae_total / batch_size if batch_size > 0 else torch.tensor(0.0, device=images.device, requires_grad=True)
+
+
 def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True):
     device = ('cuda:0' if torch.cuda.is_available() else 'cpu')
     model.to(device)
@@ -144,6 +180,7 @@ def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True)
     error_image_ids = []
     
     best_val_loss = 10000000
+    lambda_mae = 1
     
     for epoch in range(epochs):
         # Initialize tqdm for epoch-wise progress tracking
@@ -167,10 +204,15 @@ def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True)
                     # model.train()
                     # print(f"MAE: {mae_loss}")
                     
-                    # breakpoint()
-                    
                     weight_classifier = 2.0  
                     loss_dict['loss_classifier'] *= weight_classifier
+                    
+                    mae_loss = building_count_mae_loss_differentiable(model, images, counts)
+
+                    losses = sum(loss for loss in loss_dict.values()) + lambda_mae * mae_loss
+                    
+                    # breakpoint()
+                    
 
                     losses = sum(loss for loss in loss_dict.values())
                     # losses += mae_loss
@@ -191,11 +233,11 @@ def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True)
                 epoch_progress.set_postfix({"Iteration Loss": losses.item(), "Epoch Loss": epoch_loss / (i + 1)})
 
             except Exception as e:
-                print(f"Image id: {targets[0]['image_id']}")
-                error_image_ids.append(targets[0]['image_id'])
+                # print(f"Image id: {targets[0]['image_id']}")
+                # error_image_ids.append(targets[0]['image_id'])
                 # Log errors if any
                 failed_count += 1
-                print(f"Error: {e}")
+                # print(f"Error: {e}")
             #     continue
 
         # Log average loss for the epoch
@@ -250,14 +292,14 @@ def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True)
             if mae_total_loss < best_val_loss:
                 best_val_loss = mae_total_loss
                 best_epoch = epoch
-                best_model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/best_model.pth"
+                best_model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/tier1/best_model.pth"
                 torch.save(model.state_dict(), best_model_path)
                 print(f"New best model saved at: {best_model_path}")
             
             # breakpoint()
             model.train()
     
-    model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/last_model.pth"
+    model_path = f"/home/deependra/kuyesera/dahircnn/checkpoints/tier1/last_model.pth"
     torch.save(model.state_dict(), model_path)
     print(f"Last model saved at: {model_path}")
             
@@ -278,7 +320,7 @@ def train_model(model, train_loader, val_loader=None, epochs=10, plot_loss=True)
         plt.ylabel("Loss")
         plt.title("Loss vs Epochs")
 
-        plt.savefig("/home/deependra/kuyesera/dahircnn/loss_plot_with_val.png")
+        plt.savefig("/home/deependra/kuyesera/dahircnn/loss_plot_with_val_finetune.png")
         plt.close()
     
     model = load_model(best_model_path)
@@ -359,6 +401,9 @@ if __name__ == "__main__":
     dahircnn = load_model()
     # print("Model loaded: ", dahircnn)
     
+    # checkpoint_path = "/home/deependra/kuyesera/dahircnn/checkpoints/best_model.pth"
+    # dahircnn = load_model(checkpoint_path)
+    
     model = train_model(dahircnn, train_loader, val_loader=val_loader, epochs=10)
     
     # checkpoint_path = "/home/deependra/kuyesera/dahircnn/checkpoints/tier1/model_20.pth"
@@ -392,6 +437,6 @@ if __name__ == "__main__":
     sub_df = sub_df.sort_values("id").reset_index(drop=True)
 
     # Save the DataFrame to a CSV file
-    submission_path = "/home/deependra/kuyesera/dahircnn/submissions/initial_best_model.csv"
+    submission_path = "/home/deependra/kuyesera/dahircnn/submissions/initial_best_model_finetune.csv"
     sub_df.to_csv(submission_path, index=False)
     print(f"Submission file saved at {submission_path}")

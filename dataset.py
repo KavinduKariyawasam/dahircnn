@@ -38,7 +38,17 @@ from torchvision.models.detection.roi_heads import RoIHeads
 
 from torchvision.transforms import functional as TF
 
+MEAN_TRAIN = torch.tensor([0.3052, 0.3381, 0.2510, 0.3073, 0.3427, 0.2542])
+STD_TRAIN = torch.tensor([0.1630, 0.1449, 0.1360, 0.1609, 0.1426, 0.1348])
+
+MEAN_TEST = torch.tensor([0.1395, 0.1422, 0.1433, 0.1370, 0.1298, 0.1318])
+STD_TEST = torch.tensor([0.2325, 0.2271, 0.2217, 0.2182, 0.2048, 0.2003])
+
+
 DATA_DIR = "/home/deependra/Dataset"
+
+def normalize(image_tensor, mean, std):
+    return TF.normalize(image_tensor, mean, std)
 
 # Extract and add lat and lon bounds - to be used in downloading data from aws
 def parse_coords(coord_str):
@@ -340,6 +350,9 @@ class BuildingDataset(Dataset):
         img_pre = TF.to_tensor(img_pre)
         img = TF.to_tensor(img)
         
+        img_pre = normalize(img_pre, MEAN_TRAIN[3:], STD_TRAIN[3:])
+        img = normalize(img, MEAN_TRAIN[:3], STD_TRAIN[:3])
+        
         if self.augment:
             img = self.augmentations(img)
             img_pre = self.augmentations(img_pre)
@@ -461,6 +474,9 @@ class TestDataset(Dataset):
         
         img_pre = TF.resize(img_pre, self.resize_size)
         img_pre = TF.to_tensor(img_pre)
+        
+        img_pre = normalize(img_pre, MEAN_TEST[3:], STD_TEST[3:])
+        img = normalize(img, MEAN_TEST[:3], STD_TEST[:3])
 
         imgs = torch.cat([img, img_pre], dim=0)
         
