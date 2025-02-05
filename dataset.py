@@ -62,9 +62,9 @@ def parse_coords(coord_str):
     return lat, lon
 
 
-def test_df_create():
+def test_df_create(root="/home/deependra/Dataset"):
 # Load test image coords and image paths
-    test_coords = pd.read_csv(f"{DATA_DIR}/malawi_test/test_image_coords.csv")
+    test_coords = pd.read_csv(f"{root}/malawi_test/test_image_coords.csv")
     test_pre_df = pd.Series(
         [
             x
@@ -128,10 +128,10 @@ def test_df_create():
     return test_df
 
 
-def train_df_create(split="hold"):
+def train_df_create(root, split="hold"):
     dfs = []
-    image_dir = Path(f"{DATA_DIR}/x2view/geotiffs/{split}/images")
-    label_dir = Path(f"{DATA_DIR}/x2view/geotiffs/{split}/labels")
+    image_dir = Path(f"{root}/x2view/geotiffs/{split}/images")
+    label_dir = Path(f"{root}/x2view/geotiffs/{split}/labels")
     
     image_paths = list(image_dir.rglob("*.tif"))
     images_df = pd.DataFrame(image_paths, columns=["image_path"])
@@ -350,8 +350,8 @@ class BuildingDataset(Dataset):
         img_pre = TF.to_tensor(img_pre)
         img = TF.to_tensor(img)
         
-        img_pre = normalize(img_pre, MEAN_TRAIN[3:], STD_TRAIN[3:])
-        img = normalize(img, MEAN_TRAIN[:3], STD_TRAIN[:3])
+        # img_pre = normalize(img_pre, MEAN_TRAIN[3:], STD_TRAIN[3:])
+        # img = normalize(img, MEAN_TRAIN[:3], STD_TRAIN[:3])
         
         if self.augment:
             img = self.augmentations(img)
@@ -396,46 +396,11 @@ class BuildingDataset(Dataset):
 
 # Test dataset class
 class TestDataset(Dataset):
-    """
-    A PyTorch Dataset class for test images of buildings.
-    This dataset returns a dictionary similar to the training dataset but without targets:
-    {
-        "img": Tensor(C,H,W),
-        "NDVI_mean": Tensor(1),
-        "NBR_mean" : Tensor(1),
-        "NDMI_mean": Tensor(1),
-        "NDWI_mean": Tensor(1),
-        "img_id": <image identifier>
-    }
-    """
-
     def __init__(self, df, resize_size=(512, 512)):
-        """
-        Args:
-            df (pd.DataFrame): A dataframe containing test image paths and their metadata.
-                               It should have columns like 'post_image_path', 'id', and the vegetation indices.
-            resize_size (tuple): The (height, width) to resize images to.
-        """
         self.df = df.reset_index(drop=True)
         self.resize_size = resize_size
 
     def __getitem__(self, idx):
-        """
-        Loads and preprocesses an image and its associated metadata from the test dataset.
-
-        Args:
-            idx (int): The index of the image in the dataset.
-
-        Returns:
-            dict: {
-                "img": preprocessed image tensor,
-                "NDVI_mean": mean NDVI value (float tensor),
-                "NBR_mean": mean NBR value (float tensor),
-                "NDMI_mean": mean NDMI value (float tensor),
-                "NDWI_mean": mean NDWI value (float tensor),
-                "img_id": unique identifier for the image
-            }
-        """
         row = self.df.iloc[idx]
         img_path = row.post_image_path
         img_pre_path = row.pre_image_path
@@ -474,9 +439,6 @@ class TestDataset(Dataset):
         
         img_pre = TF.resize(img_pre, self.resize_size)
         img_pre = TF.to_tensor(img_pre)
-        
-        img_pre = normalize(img_pre, MEAN_TEST[3:], STD_TEST[3:])
-        img = normalize(img, MEAN_TEST[:3], STD_TEST[:3])
 
         imgs = torch.cat([img, img_pre], dim=0)
         
@@ -497,65 +459,8 @@ def collate_fn(batch):
     return imgs, targets, counts
 
 def test_collate_fn(batch):
-    """
-    Collate function for the test dataset, similar to the training collate function,
-    but excluding targets. It returns:
-    (imgs, NDVI_means, NBR_means, NDMI_means, NDWI_means, img_ids)
-
-    Args:
-        batch (list): A list of samples from the TestDataset.
-
-    Returns:
-        tuple: (imgs, NDVI_means, NBR_means, NDMI_means, NDWI_means, img_ids)
-    """
     imgs = [item["img"] for item in batch]
     img_ids = [item["img_id"] for item in batch]
 
     return imgs,img_ids
 
-
-if __name__ == "__main__":
-
-    if os.path.exists("/home/deependra/Dataset/malawi_test/test_df.csv"):
-        print("Loading test_df from file")
-        test_df = pd.read_csv("/home/deependra/Dataset/malawi_test/test_df.csv")
-    else:
-        print("Creating test_df")
-        test_df = test_df_create()
-
-
-    test_dataset = TestDataset(test_df, resize_size=(1024, 1024))
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=4,
-        shuffle=False,
-        num_workers=8,
-        collate_fn=test_collate_fn,
-    )
-
-    print("Test data loading complete")
-
-    if os.path.exists("/home/deependra/Dataset/malawi_test/train_df_tier1.csv"):
-        print("Loading train_df from file")
-        train_df = pd.read_csv("/home/deependra/Dataset/malawi_test/train_df_tier1.csv")
-    else:
-        print("Creating train_df")
-        train_df = train_df_create(split="tier1")
-
-    # Instantiate dataset
-    train_dataset = BuildingDataset(train_df, resize_size=(1024, 1024))
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=2,
-        shuffle=True,
-        num_workers=8,
-        collate_fn=collate_fn,
-    )
-
-    print("Train data loading complete")
-    
-    for i, data in enumerate(train_loader):
-        print(len(data[0][0]))
-        breakpoint()
-        break
