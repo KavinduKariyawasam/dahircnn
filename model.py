@@ -1,15 +1,9 @@
 import torch
-# from xBD_code.zoo import model_transformer_encoding
-# importlib.reload(model_transformer_encoding)
-from model_transformer_encoding import BASE_Transformer_UNet, Custom_Transformer_UNet
-# from torchvision.models.detection.backbone_utils import BackboneWithFPN
+from model_transformer_encoding import Custom_Transformer_UNet
 from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork
 
 import torch
 import torch.nn as nn
-# from torchvision.models.detection.backbone_utils import BackboneWithFPN
-# from torchvision.models.detection.fpn import FeaturePyramidNetwork
-# from torchvision.ops import misc as misc_nn_ops
 import numpy as np
 
 from collections import OrderedDict
@@ -22,18 +16,10 @@ import torch.nn.functional as F
 
 from torchvision.ops import MultiScaleRoIAlign
 import gc
-
-# from torchvision.models.detection._utils import overwrite_eps
-# from torchvision._internally_replaced_utils import load_state_dict_from_url
-
 from torchvision.models.detection.anchor_utils import AnchorGenerator
-# from torchvision.models.detection.generalized_rcnn import GeneralizedRCNN
 from torchvision.models.detection.rpn import RPNHead, RegionProposalNetwork
 from torchvision.models.detection.roi_heads import RoIHeads
 from torchvision.models.detection.transform import GeneralizedRCNNTransform
-# from torchvision.models.detection.backbone_utils import resnet_fpn_backbone, _validate_trainable_layers, mobilenet_backbone
-
-
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -79,13 +65,10 @@ class GeneralizedRCNN(nn.Module):
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
-        # print(f"=>> GRCNN forward pass <<=")
-        
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
         if self.training:
             assert targets is not None
-            # print(f"Lenght of images: {len(images)}, Length of targets: {len(targets)}")
             for target in targets:
                 boxes = target["boxes"]
                 if isinstance(boxes, torch.Tensor):
@@ -103,21 +86,8 @@ class GeneralizedRCNN(nn.Module):
             assert len(val) == 2
             original_image_sizes.append((val[0], val[1]))
 
-        # breakpoint()
-        # images = images[0]
-        # print(f"type(targets): {type(targets)}")
-        # if self.training:
-        #     targets = [targets[0], targets[0]]
-        #     breakpoint()
-            
-        # print(f"Shape of images: {images[0].shape}")
-        # img_post = self.transform([images[0][:3]], targets)
-        # img_pre = self.transform([images[0][3:]], targets)
         images, targets = self.transform(images, targets)
         
-        # print(type(images))
-        # print(type(targets))
-
         # Check for degenerate boxes
         # TODO: Move this to a function
         if targets is not None:
@@ -133,23 +103,14 @@ class GeneralizedRCNN(nn.Module):
                                      .format(degen_bb, target_idx))
 
         features = self.backbone(images.tensors)
-        # print(f"Features: {features.keys()}")
-        # print('features:', features.shape)
+        
         if isinstance(features, torch.Tensor):
             features = OrderedDict([('0', features)])
-        
-        # take only the first image and targets
-        # targets = [targets[0]] if targets is not None else None
-        
-        # print(f"image size: {images.tensors[0].shape}")
-        # images = ImageList(images.tensors.unsqueeze(0), [images.image_sizes])
         
         gc.collect()
         torch.cuda.empty_cache()
         
         proposals, proposal_losses = self.rpn(images, features, targets)
-        # for i, proposal in enumerate(proposals):
-        #     print(f"Number of proposals for image {i}: {proposal.size(0)}")
         detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
         
         del features, proposals, targets
@@ -169,12 +130,6 @@ class GeneralizedRCNN(nn.Module):
             return losses, detections
         else:
             return self.eager_outputs(losses, detections)
-
-
-# __all__ = [
-#     "FasterRCNN", "fasterrcnn_resnet50_fpn", "fasterrcnn_mobilenet_v3_large_320_fpn",
-#     "fasterrcnn_mobilenet_v3_large_fpn"
-# ]
 
 
 class FasterRCNN(GeneralizedRCNN):
@@ -228,13 +183,8 @@ class FasterRCNN(GeneralizedRCNN):
             # Define aspect ratios for each anchor
             aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
 
-            # Create the AnchorGenerator
             rpn_anchor_generator = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
-            # anchor_sizes = ((32,), (64,), (128,), (256,), (512,))
-            # aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
-            # rpn_anchor_generator = AnchorGenerator(
-            #     anchor_sizes, aspect_ratios
-            # )
+            
         if rpn_head is None:
             rpn_head = RPNHead(
                 out_channels, rpn_anchor_generator.num_anchors_per_location()[0]
@@ -301,10 +251,7 @@ class TwoMLPHead(nn.Module):
         self.fc6 = nn.Linear(in_channels, representation_size)
         self.fc7 = nn.Linear(representation_size, representation_size)
 
-    def forward(self, x):
-        
-        # print(f"=>> TwoMLPHead forward pass <<=")
-        
+    def forward(self, x):        
         x = x.flatten(start_dim=1)
 
         x = F.relu(self.fc6(x))
@@ -329,9 +276,6 @@ class FastRCNNPredictor(nn.Module):
         self.bbox_pred = nn.Linear(in_channels, num_classes * 4)
 
     def forward(self, x):
-        
-        # print(f"=>> FastRCNNPredictor forward pass <<=")
-        
         if x.dim() == 4:
             assert list(x.shape[2:]) == [1, 1]
         x = x.flatten(start_dim=1)
@@ -339,18 +283,6 @@ class FastRCNNPredictor(nn.Module):
         bbox_deltas = self.bbox_pred(x)
 
         return scores, bbox_deltas
-
-
-
-# from torchvision.models.detection._utils import overwrite_eps
-# from torchvision._internally_replaced_utils import load_state_dict_from_url
-
-# from torchvision.models.detection.faster_rcnn import FasterRCNN
-# from torchvision.models.detection.backbone_utils import resnet_fpn_backbone, _validate_trainable_layers
-
-# __all__ = [
-#     "MaskRCNN", "maskrcnn_resnet50_fpn",
-# ]
 
 
 class CUSTOM_MaskRCNN(FasterRCNN):
@@ -447,8 +379,6 @@ class MaskRCNNHeads(nn.Sequential):
         for name, param in self.named_parameters():
             if "weight" in name:
                 nn.init.kaiming_normal_(param, mode="fan_out", nonlinearity="relu")
-            # elif "bias" in name:
-            #     nn.init.constant_(param, 0)
 
 
 class MaskRCNNPredictor(nn.Sequential):
@@ -462,9 +392,6 @@ class MaskRCNNPredictor(nn.Sequential):
         for name, param in self.named_parameters():
             if "weight" in name:
                 nn.init.kaiming_normal_(param, mode="fan_out", nonlinearity="relu")
-            # elif "bias" in name:
-            #     nn.init.constant_(param, 0)
-
 
 
 class CustomMaskRCNNBackbone(nn.Module):
@@ -478,9 +405,6 @@ class CustomMaskRCNNBackbone(nn.Module):
         self.out_channels = 256
 
     def forward(self, x):
-        
-        # print(f"=>> CustomMaskRCNNBackbone forward pass <<=")
-        
         backbone_outputs = self.backbone(x)
         out_2, out_3, out_4, out_5 = (
             backbone_outputs["0"],
@@ -495,50 +419,4 @@ class CustomMaskRCNNBackbone(nn.Module):
             "3": out_5,
         }
         fpn_outputs = self.fpn(fpn_inputs)
-        # for level, feature_map in enumerate(fpn_outputs.values()):
-        #     print(f"FPN Level {level} Feature Map Shape: {feature_map.shape}")
         return fpn_outputs
-
-
-
-if __name__ == "__main__":
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
-
-    backbone = Custom_Transformer_UNet(input_nc=3, output_nc=5, token_len=4, resnet_stages_num=4,
-                                with_pos='learned', with_decoder_pos='learned', enc_depth=1, dec_depth=8).to(device)
-
-
-    # Define input channels of feature maps from the custom backbone
-    fpn_in_channels = [64, 128, 256, 512]  # Replace with actual channels from your encoder
-    fpn_out_channels = 32  # Number of output channels from FPN
-
-    # Initialize the custom backbone
-    custom_backbone = CustomMaskRCNNBackbone(backbone)
-
-    img1 = np.random.rand(1024, 1024, 3)
-    img2 = np.random.rand(1024, 1024, 3)
-
-    img1_tensor = torch.tensor(img1.transpose((2, 0, 1))).float()
-    img2_tensor = torch.tensor(img2.transpose((2, 0, 1))).float()
-
-    imgs = np.concatenate([img1, img2], axis=2)
-
-    imgs = torch.tensor(imgs.transpose((2, 0, 1))).float()
-
-    print(imgs.shape)
-
-    # Instantiate Mask R-CNN with the custom anchor generator
-    model = CUSTOM_MaskRCNN(
-        backbone=custom_backbone,
-        num_classes=5,  # Adjust based on your dataset
-        # rpn_anchor_generator=anchor_generator
-    )
-
-    model.transform.min_size = (1024,)
-    model.eval().cuda()
-    # print the model architecture
-    # output = model([img1_tensor.to(device), img2_tensor.to(device)])
-    print(f"image shapes: {imgs.shape}")
-    output = model([imgs.to(device), imgs.to(device)])
-
-    # print(output)
