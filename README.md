@@ -49,7 +49,15 @@ git clone https://github.com/KavinduKariyawasam/dahircnn.git
 cd dahircnn
 ```
 
-### 2. Train the model
+### 2. Setup conda environment
+
+```sh
+conda create -n dahircnn python==3.7
+conda activate dahircnn
+pip install -r requirements.txt
+```
+
+### 3. Train and evaluate the model
 
 ```sh
 python train.py
