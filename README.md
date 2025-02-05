@@ -1,5 +1,12 @@
 # Building Damage Assessment using Dahitra-RCNN
 
+## Contributors
+
+- **[Kavindu Kariyawasam](https://github.com/KavinduKariyawasam)** – University of Moratuwa, Sri Lanka
+- **[Deependra Dewagiri](https://github.com/deepdewdeep)** – University of Moratuwa, Sri Lanka
+
+If you find this project useful, please consider giving it a ⭐ on GitHub to support our work!
+
 ## Overview
 
 In March 2023, **Cyclone Freddy** caused severe flooding in **Blantyre, Malawi**, devastating communities such as **Chilobwe on Soche Mountain**. The disaster was exacerbated by **inadequate drainage, deforestation, and unregulated urban sprawl**, disproportionately affecting vulnerable groups, including **women, pregnant women, and young girls**.
@@ -65,4 +72,6 @@ python train.py
 
 ## Acknowledgments
 
-This project is supported by the AI for Equity Challenge in partnership with IRCAI and AWS. We appreciate AWS’s cloud infrastructure and technical support in deploying this solution. Also we used two NVIDIA Quadro RTX 6000 GPUs from Electronic and Telecommunication department of University of Moratuwa, Sri Lanka.
+This project is supported by the **AI for Equity Challenge** in partnership with **IRCAI** and **AWS**. We appreciate **AWS's free cloud computing resources**, which enabled us to train and run our models efficiently.
+
+Additionally, we utilized two **NVIDIA Quadro RTX 6000 GPUs** provided by the **Department of Electronic and Telecommunication Engineering at the University of Moratuwa, Sri Lanka**, which significantly contributed to the model's training and optimization.
