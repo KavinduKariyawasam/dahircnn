@@ -1,3 +1,5 @@
 checkpoints/
 __pycache__/
 submissions/
+error_image_ids_tier1.txt
+error_image_ids.txt
