@@ -156,3 +156,27 @@ To alternate **PrePost** and **Single**-image samples in one training loop, a **
 - **Combined** approach: Optionally merges these two datasets for more diversified training data.
 
 This carefully designed pipeline ensures that **images, bounding boxes, and masks** all align correctly after cropping, shifting, and resizing. It also handles **edge cases** like partial polygons and multi-polygons, making it more robust for **satellite-based disaster assessment** tasks.
+
+## 9. Example Visualization: Cropping & Shifting the Bottom Region
+
+Below is an **example** of how we clip the **bottom** part of the original image (rows `571..1023`, columns `0..956`) and shift it to the **top-left** corner of a new **1024×1024** canvas. Both the **Pre-Disaster** and **Post-Disaster** images and their polygons are shown side by side.
+
+![image](https://github.com/user-attachments/assets/2e17565d-132f-4fc5-ae6e-5343b99c55bd)
+
+1. **Top-left**: Original *Pre-Disaster*  
+2. **Top-right**: Original *Post-Disaster*  
+3. **Bottom-left**: Clipped & Shifted *Pre-Disaster*  
+4. **Bottom-right**: Clipped & Shifted *Post-Disaster*
+
+```python
+import pandas as pd
+
+# Suppose `df` is your DataFrame with the required columns and file paths, e.g.:
+# df = pd.read_csv("disaster_data.csv")
+
+# For demonstration, let's say we want to plot the first row (i=0)
+index_to_plot = 0
+
+# Call the function to display the 2x2 subplot with polygons
+plot_disaster_comparison_prepostpoly_bottom(index_to_plot, df)
+
